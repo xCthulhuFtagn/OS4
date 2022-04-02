@@ -20,9 +20,9 @@ int main(int argc, char* argv[]){
     //fprintf(stderr, "%s\n", argv[1]);
     while ((len = read(input_desc, buf, PIPE_BUF)) > 0) {
         //fprintf(stderr, "%*s", len, buf);
-        //write(STDOUT_FILENO, buf, len);
-        printf("%*s", len, buf);
-        fprintf(stderr, "Quantity of writed symbols from \"%s\": %d\n", argv[1], len);
+        write(STDOUT_FILENO, buf, len);
+        //printf("%*s", len, buf);
+        //fprintf(stderr, "Quantity of writed symbols from \"%s\": %d\n", argv[1], len);
     }
     //fprintf(stderr, "End of while\n");
     if (len < 0) {

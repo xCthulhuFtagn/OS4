@@ -25,11 +25,12 @@ int main(int argc, char* argv[]){
     char command[BUFSIZ];
     getcwd(command, BUFSIZ);
     strcat(command, "/printer");
-    int id = fork(), pipe4orig_desc[2], pipe4key_desc[2], output_desc, st;
+    int id, pipe4orig_desc[2], pipe4key_desc[2], output_desc, st;
     if (pipe(pipe4key_desc) == -1 || pipe(pipe4orig_desc) == -1) {
         printf("Pipe opening failure\n");
         exit(EXIT_FAILURE);
     }
+    id = fork();
     switch (id)
     {
     case -1:
@@ -52,7 +53,7 @@ int main(int argc, char* argv[]){
             close(pipe4key_desc[1]);
             if (dup2(pipe4orig_desc[1], STDOUT_FILENO) < 0) {
                 close(pipe4orig_desc[1]);
-                fprintf(stderr, "Fucking pipe is fucked up, who else could do this if fucking pipe wasn't, ha?\n");
+                fprintf(stderr, "Duplication didn't work\n");
                 exit(EXIT_FAILURE);
             }
             close(pipe4orig_desc[1]);
@@ -63,7 +64,7 @@ int main(int argc, char* argv[]){
             close(pipe4orig_desc[1]);
             if (dup2(pipe4key_desc[1], STDOUT_FILENO) < 0) {
                 close(pipe4key_desc[1]);
-                fprintf(stderr, "Fucking pipe is fucked up, who else could do this if fucking pipe wasn't, ha?\n");
+                fprintf(stderr, "Duplication didn't work\n");
                 exit(EXIT_FAILURE);
             }
             close(pipe4key_desc[1]);
@@ -81,10 +82,13 @@ int main(int argc, char* argv[]){
     close(pipe4orig_desc[1]);
     close(pipe4key_desc[1]);
     if ((0 > wait(&st) || WEXITSTATUS(st) == EXIT_FAILURE) 
-    && (0 > wait(&st) || WEXITSTATUS(st) == EXIT_FAILURE)) {
-        close(pipe4key_desc[0]);
-        close(pipe4orig_desc[0]);
-        exit(EXIT_FAILURE);
+    || (0 > wait(&st) || WEXITSTATUS(st) == EXIT_FAILURE)) {
+        if (errno != ECHILD) {
+            close(pipe4key_desc[0]);
+            close(pipe4orig_desc[0]);
+            perror("Something goind wrong");
+            exit(EXIT_FAILURE);
+        }
     }
     size_t biba, boba; //professional naming
     char * biba_buf, * boba_buf;
@@ -111,7 +115,7 @@ int main(int argc, char* argv[]){
     boba_buf = (char *)malloc(off);
     check_mem((void *)boba_buf);
     biba = 0;
-    while ((boba = read(pipe4orig_desc[0], biba_buf, off)) > 0) {
+    while ((boba = read(pipe4orig_desc[0], boba_buf, off)) > 0) {
         for (int i = 0; i < boba; ++i) boba_buf[i] ^= biba_buf[i];
         if (write(output_desc, boba_buf, boba) < 0) {
             close(output_desc);
