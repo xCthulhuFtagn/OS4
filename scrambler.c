@@ -7,21 +7,83 @@
 #include <sys/wait.h>
 #include <string.h>
 #include <errno.h>
+#include <limits.h>
+
+// проверка выделения памяти
+void check_mem(void * ptr){
+    if (ptr == NULL) {
+        perror("Memory problem");
+        exit(EXIT_FAILURE);
+    }
+}
 
 int main(int argc, char* argv[]){
     if (argc != 4) {
         printf("Wrong number of arguments!\n");
         exit(EXIT_FAILURE);
     }
-    int output_desc;
-    FILE * orig, * key;
     char command[BUFSIZ];
-    sprintf(command, "./%s %s", "printer", argv[1]);
-    orig = popen(command, "r");
-    sprintf(command, "./%s %s", "printer", argv[2]);
-    key = popen(command, "r");
-    if (key == NULL || orig == NULL) {
-        printf("No command is responding");
+    getcwd(command, BUFSIZ);
+    strcat(command, "/printer");
+    int id = fork(), pipe4orig_desc[2], pipe4key_desc[2], output_desc, st;
+    if (pipe(pipe4key_desc) == -1 || pipe(pipe4orig_desc) == -1) {
+        printf("Pipe opening failure\n");
+        exit(EXIT_FAILURE);
+    }
+    switch (id)
+    {
+    case -1:
+        printf("Fork in main process broke\n");
+        exit(EXIT_FAILURE);
+    case 0:
+    {
+        int id2 = fork();
+        char* ar[3];
+        ar[0] = command;
+        ar[2] = NULL;
+        close(pipe4key_desc[0]);
+        close(pipe4orig_desc[0]);
+        switch (id2)
+        {
+        case -1:
+            printf("Fork in subprocess broke\n");
+            exit(EXIT_FAILURE);
+        case 0:
+            close(pipe4key_desc[1]);
+            if (dup2(pipe4orig_desc[1], STDOUT_FILENO) < 0) {
+                close(pipe4orig_desc[1]);
+                fprintf(stderr, "Fucking pipe is fucked up, who else could do this if fucking pipe wasn't, ha?\n");
+                exit(EXIT_FAILURE);
+            }
+            close(pipe4orig_desc[1]);
+            ar[1] = argv[1];
+            execv(command, ar);
+            exit(EXIT_FAILURE); //original
+        default:
+            close(pipe4orig_desc[1]);
+            if (dup2(pipe4key_desc[1], STDOUT_FILENO) < 0) {
+                close(pipe4key_desc[1]);
+                fprintf(stderr, "Fucking pipe is fucked up, who else could do this if fucking pipe wasn't, ha?\n");
+                exit(EXIT_FAILURE);
+            }
+            close(pipe4key_desc[1]);
+            ar[1] = argv[2];
+            if (WEXITSTATUS(st) == EXIT_FAILURE) {
+                fprintf(stderr, "Fucking fork in your ass\n");
+                return EXIT_FAILURE;
+            }
+            execv(command, ar); // returns control unlike execvp
+            exit(EXIT_FAILURE); //key
+        }
+        break;
+    }
+    }
+    close(pipe4orig_desc[1]);
+    close(pipe4key_desc[1]);
+    if ((0 > wait(&st) || WEXITSTATUS(st) == EXIT_FAILURE) 
+    && (0 > wait(&st) || WEXITSTATUS(st) == EXIT_FAILURE)) {
+        close(pipe4key_desc[0]);
+        close(pipe4orig_desc[0]);
         exit(EXIT_FAILURE);
     }
     size_t biba, boba; //professional naming
@@ -33,34 +95,41 @@ int main(int argc, char* argv[]){
     }
     size_t off = 0;
     do {
-        off += BUFSIZ;
+        off += PIPE_BUF;
         biba_buf = (char *)realloc((void *)biba_buf, off);
-    } while ((biba = fread(biba_buf + off - BUFSIZ, 1, BUFSIZ, key)) == BUFSIZ);
-    if (!feof(key)) {
-        close(output_desc);
-        printf("Reading error\n");
+        check_mem((void *)biba_buf);
+    } while ((biba = read(pipe4key_desc[0], biba_buf + off - PIPE_BUF, PIPE_BUF)) == PIPE_BUF);
+    off += biba - PIPE_BUF;
+    close(pipe4key_desc[0]);
+    if (biba < 0 || !off) {
+        if (!off) printf("Reading key failure!!!\n");
+        else perror("Reading key error");
+        close(pipe4orig_desc[0]);
         exit(EXIT_FAILURE);
     }
-    off += biba - BUFSIZ;
+    printf("Reading key completed: %lu symbols have been read!\n", off);
     boba_buf = (char *)malloc(off);
-    while ((boba = fread(boba_buf, 1, off, orig)) > 0) {
+    check_mem((void *)boba_buf);
+    biba = 0;
+    while ((boba = read(pipe4orig_desc[0], biba_buf, off)) > 0) {
         for (int i = 0; i < boba; ++i) boba_buf[i] ^= biba_buf[i];
         if (write(output_desc, boba_buf, boba) < 0) {
-            pclose(key);
-            pclose(orig);
             close(output_desc);
-            printf("Writing error\n");
+            close(pipe4orig_desc[0]);
+            perror("Writing error");
             exit(EXIT_FAILURE);
         }
+        biba += boba;
     }
-    free(boba_buf);
-    free(biba_buf);
-    if (!feof(orig)) {
-        close(output_desc);
-        printf("Reading error\n");
+    if (boba < 0) {
+        printf("Reading original failure!!!");
+        close(pipe4orig_desc[0]);
         exit(EXIT_FAILURE);
     }
-    pclose(key);
-    pclose(orig);
+    printf("Reading original completed: %lu symbols have been read!\n", biba);
+    printf("Success!!!\n");
+    free(boba_buf);
+    free(biba_buf);
+    close(pipe4orig_desc[0]);
     exit(EXIT_SUCCESS);
 }
