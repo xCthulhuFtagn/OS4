@@ -18,6 +18,10 @@ void check_mem(void * ptr){
 }
 
 int main(int argc, char* argv[]){
+    if (argc == 1 && strcmp(argv[1], "--help") == 0) {
+        printf("Right input: ./scrambler {original_file} {key_file} {output_file}\n");
+        exit(EXIT_SUCCESS);
+    }
     if (argc != 4) {
         printf("Wrong number of arguments!\n");
         exit(EXIT_FAILURE);
@@ -49,31 +53,30 @@ int main(int argc, char* argv[]){
         case -1:
             printf("Fork in subprocess broke\n");
             exit(EXIT_FAILURE);
-        case 0:
+        case 0: //original
+            close(pipe4key_desc[0]);
             close(pipe4key_desc[1]);
             if (dup2(pipe4orig_desc[1], STDOUT_FILENO) < 0) {
                 close(pipe4orig_desc[1]);
-                fprintf(stderr, "Duplication didn't work\n");
+                fprintf(stderr, "Duplication of didn't work for original\n");
                 exit(EXIT_FAILURE);
             }
-            close(pipe4orig_desc[1]);
             ar[1] = argv[1];
             execv(command, ar);
-            exit(EXIT_FAILURE); //original
-        default:
             close(pipe4orig_desc[1]);
+            exit(EXIT_FAILURE);
+        default: //key
+            close(pipe4orig_desc[0]);
+            close(pipe4orig_desc[1]);
+            close(pipe4key_desc[0]);
             if (dup2(pipe4key_desc[1], STDOUT_FILENO) < 0) {
                 close(pipe4key_desc[1]);
-                fprintf(stderr, "Duplication didn't work\n");
+                fprintf(stderr, "Duplication didn't work for key\n");
                 exit(EXIT_FAILURE);
             }
             close(pipe4key_desc[1]);
             ar[1] = argv[2];
-            if (WEXITSTATUS(st) == EXIT_FAILURE) {
-                fprintf(stderr, "Fucking fork in your ass\n");
-                return EXIT_FAILURE;
-            }
-            execv(command, ar); // returns control unlike execvp
+            execv(command, ar);
             exit(EXIT_FAILURE); //key
         }
         break;
@@ -86,13 +89,13 @@ int main(int argc, char* argv[]){
         if (errno != ECHILD) {
             close(pipe4key_desc[0]);
             close(pipe4orig_desc[0]);
-            perror("Something goind wrong");
+            perror("Something went wrong");
             exit(EXIT_FAILURE);
         }
     }
-    size_t biba, boba; //professional naming
-    char * biba_buf, * boba_buf;
-    biba_buf = NULL;
+    size_t read_key, read_orig;
+    char * key_buf, * orig_buf;
+    key_buf = NULL;
     if ((output_desc = open(argv[3], O_WRONLY | O_CREAT | O_TRUNC, S_IWUSR | S_IRUSR)) < 0) {
         printf("Output file could not be opened\n");
         exit(EXIT_FAILURE);
@@ -100,40 +103,40 @@ int main(int argc, char* argv[]){
     size_t off = 0;
     do {
         off += PIPE_BUF;
-        biba_buf = (char *)realloc((void *)biba_buf, off);
-        check_mem((void *)biba_buf);
-    } while ((biba = read(pipe4key_desc[0], biba_buf + off - PIPE_BUF, PIPE_BUF)) == PIPE_BUF);
-    off += biba - PIPE_BUF;
+        key_buf = (char *)realloc((void *)key_buf, off);
+        check_mem((void *)key_buf);
+    } while ((read_key = read(pipe4key_desc[0], key_buf + off - PIPE_BUF, PIPE_BUF)) == PIPE_BUF);
+    off += read_key - PIPE_BUF;
     close(pipe4key_desc[0]);
-    if (biba < 0 || !off) {
+    if (read_key < 0 || !off) {
         if (!off) printf("Reading key failure!!!\n");
         else perror("Reading key error");
         close(pipe4orig_desc[0]);
         exit(EXIT_FAILURE);
     }
     printf("Reading key completed: %lu symbols have been read!\n", off);
-    boba_buf = (char *)malloc(off);
-    check_mem((void *)boba_buf);
-    biba = 0;
-    while ((boba = read(pipe4orig_desc[0], boba_buf, off)) > 0) {
-        for (int i = 0; i < boba; ++i) boba_buf[i] ^= biba_buf[i];
-        if (write(output_desc, boba_buf, boba) < 0) {
+    orig_buf = (char *)malloc(off);
+    check_mem((void *)orig_buf);
+    read_key = 0;
+    while ((read_orig = read(pipe4orig_desc[0], orig_buf, off)) > 0) {
+        for (int i = 0; i < read_orig; ++i) orig_buf[i] ^= key_buf[i];
+        if (write(output_desc, orig_buf, read_orig) < 0) {
             close(output_desc);
             close(pipe4orig_desc[0]);
             perror("Writing error");
             exit(EXIT_FAILURE);
         }
-        biba += boba;
+        read_key += read_orig;
     }
-    if (boba < 0) {
+    if (read_orig < 0) {
         printf("Reading original failure!!!");
         close(pipe4orig_desc[0]);
         exit(EXIT_FAILURE);
     }
-    printf("Reading original completed: %lu symbols have been read!\n", biba);
+    printf("Reading original completed: %lu symbols have been read!\n", read_key);
     printf("Success!!!\n");
-    free(boba_buf);
-    free(biba_buf);
+    free(orig_buf);
+    free(key_buf);
     close(pipe4orig_desc[0]);
     exit(EXIT_SUCCESS);
 }

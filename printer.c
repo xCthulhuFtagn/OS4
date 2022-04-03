@@ -17,20 +17,15 @@ int main(int argc, char* argv[]){
     }
     char buf[PIPE_BUF];
     int len;
-    //fprintf(stderr, "%s\n", argv[1]);
     while ((len = read(input_desc, buf, PIPE_BUF)) > 0) {
-        //fprintf(stderr, "%*s", len, buf);
         write(STDOUT_FILENO, buf, len);
-        //printf("%*s", len, buf);
-        //fprintf(stderr, "Quantity of writed symbols from \"%s\": %d\n", argv[1], len);
     }
-    //fprintf(stderr, "End of while\n");
     if (len < 0) {
         perror("Reading process failed");
         exit(EXIT_FAILURE);
     }
     if (close(input_desc) == -1) {
-        fprintf(stderr, "Input file %s could not closed", argv[1]);
+        fprintf(stderr, "Input file %s could not be closed", argv[1]);
         perror("");
         exit(EXIT_FAILURE);
     };
