@@ -1,0 +1,9 @@
+{
+    "cmake.debugConfig": {
+        "args": [
+            "echo ass",
+            "cat out",
+            "out"
+        ]
+  }
+}
